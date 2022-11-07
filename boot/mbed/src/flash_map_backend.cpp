@@ -126,15 +126,12 @@ void flash_area_close(const struct flash_area* fap) {
         bd->deinit();
     }
 }
-
 /*
  * Read/write/erase. Offset is relative from beginning of flash area.
  */
 int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint32_t len) {
     mbed::BlockDevice* bd = flash_map_bd[fap->fa_id];
-
-    /* Note: The address must be aligned to bd->get_read_size(). If MCUBOOT_READ_GRANULARITY
-       is defined, the length does not need to be aligned. */
+  /* Note: The address must be aligned to bd->get_read_size(). */
 #ifdef MCUBOOT_READ_GRANULARITY
     uint32_t read_size = bd->get_read_size();
     if (read_size == 0) {
@@ -145,11 +142,15 @@ int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint3
         MCUBOOT_LOG_ERR("Please increase MCUBOOT_READ_GRANULARITY (currently %u) to be at least %u",
                     MCUBOOT_READ_GRANULARITY, read_size);
         return -1;
-    }
+    }    
+    //MCUBOOT_LOG_DBG("offset %X, len %X, readsize %X", off, len, read_size);
 
-    uint32_t remainder = len % read_size;
-    len -= remainder;
-    if (len != 0) {
+
+    /* Get the offset of the requested address to the nearest aligned read address */
+    uint32_t remainder = off % read_size;
+    /* If address is aligned and read size is aligned */
+    if ((remainder == 0) && (len % read_size == 0))
+    {
 #endif
         if (!bd->is_valid_read(off, len)) {
             MCUBOOT_LOG_ERR("Invalid read: fa_id %d offset 0x%x len 0x%x", fap->fa_id,
@@ -158,31 +159,81 @@ int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint3
         }
         else {
             int ret = bd->read(dst, off, len);
+            //MCUBOOT_LOG_WRN("offset1 %X",off);
             if (ret != 0) {
                 MCUBOOT_LOG_ERR("Read failed: fa_id %d offset 0x%x len 0x%x", fap->fa_id,
                         (unsigned int) off, (unsigned int) len);
                 return ret;
             }
+            return 0;
         }
+       #define MCUBOOT_READ_GRANULARITY
 #ifdef MCUBOOT_READ_GRANULARITY
     }
 
-    if (remainder) {
-        if (!bd->is_valid_read(off + len, read_size)) {
-            MCUBOOT_LOG_ERR("Invalid read: fa_id %d offset 0x%x len 0x%x", fap->fa_id,
+    /* Length more than read size is not supported on unaligned addresses*/
+    if(len > read_size)
+    {
+        return -1;
+    }
+    /* Check if length is less than read size */
+    if(len < read_size)
+    {
+        /* Calculate the read_size aligned address*/
+        /* If offset is smaller than remainder the address to read from will be 0*/
+        if(off <= remainder)
+        {
+            off = 0;
+        }
+        else
+        {
+            off -= remainder;
+        }
+
+        /* Read from read_size aligned address*/
+        if (!bd->is_valid_read(off , read_size))
+        {
+            MCUBOOT_LOG_ERR("Invalid read: fa_id %d offset 0x%x read_size 0x%x", fap->fa_id,
                     (unsigned int) (off + len), (unsigned int) read_size);
             return -1;
         }
-        else {
+        else
+        {
             uint8_t buffer[MCUBOOT_READ_GRANULARITY];
-            int ret = bd->read(buffer, off + len, read_size);
+            int ret = bd->read(buffer, off, read_size);
             if (ret != 0) {
                 MCUBOOT_LOG_ERR("Read failed: %d", ret);
                 return ret;
             }
-            memcpy((uint8_t *)dst + len, buffer, remainder);
+
+            // Read the next page if the size overflows to the next sector
+            if((remainder + len) > (read_size))
+            {
+                // Finish copying current sector
+                memcpy((uint8_t *)dst, &buffer[remainder], read_size - remainder);
+
+                // Get overflow size
+                int overflow = (remainder+len)-read_size;
+                
+                // Read next sector into buffer
+                int ret = bd->read(buffer, off + read_size, read_size);
+                if (ret != 0) {
+                    MCUBOOT_LOG_ERR("Read failed: %d", ret);
+                    return ret;
+                }
+
+                // Copy the exceeded size into destination
+                memcpy((uint8_t *)dst + (read_size - remainder), &buffer[0], overflow);
+
+                return 0;
+            }
+
+
+            /* Copy into destination buffer*/
+            memcpy((uint8_t *)dst, &buffer[remainder], len);
         }
     }
+
 #endif
 
     return 0;
@@ -190,6 +241,7 @@ int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint3
 
 int flash_area_write(const struct flash_area* fap, uint32_t off, const void* src, uint32_t len) {
     mbed::BlockDevice* bd = flash_map_bd[fap->fa_id];
+
     return bd->program(src, off, len);
 }
 
