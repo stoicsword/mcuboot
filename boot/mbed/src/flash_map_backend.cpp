@@ -167,7 +167,7 @@ int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint3
             }
             return 0;
         }
-       #define MCUBOOT_READ_GRANULARITY
+        
 #ifdef MCUBOOT_READ_GRANULARITY
     }
 
