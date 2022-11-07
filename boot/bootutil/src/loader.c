@@ -1195,6 +1195,11 @@ boot_copy_image(struct boot_loader_state *state, struct boot_status *bs)
                                last_sector),
                            boot_img_sector_size(state, BOOT_SECONDARY_SLOT,
                                last_sector));
+
+    //Erase header in secondary slot due to erase region issues
+    uint8_t erase_value[512] = {255};
+    rc = flash_area_write(fap_secondary_slot,0,erase_value,512);
+
     assert(rc == 0);
 
     flash_area_close(fap_primary_slot);
