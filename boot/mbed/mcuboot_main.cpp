@@ -17,6 +17,7 @@
  */
 
 #if MCUBOOT_BOOTLOADER_BUILD
+#include "FlashIAP/FlashIAPBlockDevice.h"
 
 #include <stdlib.h>
 #include "bootutil/bootutil.h"
@@ -58,6 +59,27 @@ int main()
 #endif //MCUBOOT_HAVE_LOGGING
 
     tr_info("Starting MCUboot");
+
+    FlashIAPBlockDevice bd(OTA_INDICATE_ADDRESS,FLASHIAP_ERASE_SIZE);
+    tr_info("FlashIAPBlockDevice test\n");
+    uint8_t buffer[8] = {0};
+    uint8_t magic_ota[8] = {1,2,3,4,5,6,7,8};
+
+    bd.init();
+    // Read back what was stored
+    bd.read(buffer, 0, sizeof(buffer));
+    if(memcmp(buffer, magic_ota, sizeof(buffer)) == 0)
+    {
+        tr_info("magic is set and jumping to ota app\n");
+        bd.erase(0, bd.get_erase_size());
+        bd.deinit();
+
+        mbed_start_application(OTA_ADDRESS);
+    }
+    bd.erase(0, bd.get_erase_size());
+
+    // Deinitialize the device
+    bd.deinit();
     
 #if (MCUBOOT_CRYPTO_BACKEND == MBEDTLS)
     // Initialize mbedtls crypto for use by MCUboot
