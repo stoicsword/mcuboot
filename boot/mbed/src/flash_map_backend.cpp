@@ -18,6 +18,7 @@
 
 #include <assert.h>
 #include <cstring>
+#include <cinttypes>
 #include "flash_map_backend/flash_map_backend.h"
 #include "flash_map_backend/secondary_bd.h"
 #include "sysflash/sysflash.h"
@@ -139,7 +140,7 @@ int flash_area_read(const struct flash_area* fap, uint32_t off, void* dst, uint3
         return -1;
     }
     if (MCUBOOT_READ_GRANULARITY < read_size) {
-        MCUBOOT_LOG_ERR("Please increase MCUBOOT_READ_GRANULARITY (currently %u) to be at least %u",
+        MCUBOOT_LOG_ERR("Please increase MCUBOOT_READ_GRANULARITY (currently %u) to be at least %" PRIu32,
                     MCUBOOT_READ_GRANULARITY, read_size);
         return -1;
     }    
@@ -266,11 +267,14 @@ int flash_area_get_sectors(int fa_id, uint32_t* count, struct flash_sector* sect
     /* Loop through sectors and collect information on them */
     bd_addr_t offset = 0;
     *count = 0;
-    while (*count < MCUBOOT_MAX_IMG_SECTORS && bd->is_valid_read(offset, bd->get_read_size())) {
+    while (bd->is_valid_read(offset, bd->get_read_size())) {
 
-        sectors[*count].fs_off = offset;
         bd_size_t erase_size = bd->get_erase_size(offset);
-        sectors[*count].fs_size = erase_size;
+
+        if (*count < MCUBOOT_MAX_IMG_SECTORS) {
+            sectors[*count].fs_off = offset;
+            sectors[*count].fs_size = erase_size;
+        }
 
         offset += erase_size;
         *count += 1;
@@ -281,10 +285,6 @@ int flash_area_get_sectors(int fa_id, uint32_t* count, struct flash_sector* sect
 
 int flash_area_id_from_image_slot(int slot) {
     return slot;
-}
-
-int flash_area_id_to_image_slot(int area_id) {
-    return area_id;
 }
 
 /**

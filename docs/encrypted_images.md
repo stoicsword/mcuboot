@@ -120,12 +120,14 @@ start the validation process, decrypting the blocks before check. A good
 image being determined, the upgrade consists in reading the blocks from
 the `secondary slot`, decrypting and writing to the `primary slot`.
 
-If swap is used for the upgrade process, the encryption happens when
-copying the sectors of the `secondary slot` to the scratch area.
-
-The `scratch` area is not encrypted, so it must reside in the internal
-flash of the MCU to avoid attacks that could interrupt the upgrade and
-dump the data.
+If swap using scratch is used for the upgrade process, the decryption happens
+when copying the content of the scratch area to the `primary slot`, which means
+the scratch area does not contain the image unencrypted. However, unless
+`MCUBOOT_SWAP_SAVE_ENCTLV` is enabled, the decryption keys are stored in
+plaintext in the scratch area. Therefore, `MCUBOOT_SWAP_SAVE_ENCTLV` must be
+enabled if the scratch area does not reside in the internal flash memory of the
+MCU, to avoid attacks that could interrupt the upgrade and read the plaintext
+decryption keys from external flash memory.
 
 Also when swap is used, the image in the `primary slot` is checked for
 presence of the `ENCRYPTED` flag and the key TLV. If those are present the
@@ -148,7 +150,7 @@ occurs and the information is spread across multiple areas.
 ## [Creating your keys with imgtool](#creating-your-keys-with-imgtool)
 
 `imgtool` can generate keys by using `imgtool keygen -k <output.pem> -t <type>`,
- where type can be one of `rsa-2048`, `rsa-3072`, `ecdsa-p256`, `ecdsa-p224`
+ where type can be one of `rsa-2048`, `rsa-3072`, `ecdsa-p256`
 or `ed25519`. This will generate a keypair or private key.
 
 To extract the public key in source file form, use

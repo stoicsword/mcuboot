@@ -15,6 +15,7 @@
 #include "esp_err.h"
 #include "bootloader_flash_priv.h"
 #include "esp_flash_encrypt.h"
+#include "mcuboot_config/mcuboot_config.h"
 
 #include "flash_map_backend/flash_map_backend.h"
 #include "sysflash/sysflash.h"
@@ -49,16 +50,19 @@ _Static_assert(IS_ALIGNED(FLASH_BUFFER_SIZE, 4), "Buffer size for SPI Flash oper
 
 #define BOOTLOADER_START_ADDRESS CONFIG_BOOTLOADER_OFFSET_IN_FLASH
 #define BOOTLOADER_SIZE CONFIG_ESP_BOOTLOADER_SIZE
+
 #define IMAGE0_PRIMARY_START_ADDRESS CONFIG_ESP_IMAGE0_PRIMARY_START_ADDRESS
 #define IMAGE0_SECONDARY_START_ADDRESS CONFIG_ESP_IMAGE0_SECONDARY_START_ADDRESS
-#define SCRATCH_OFFSET CONFIG_ESP_SCRATCH_OFFSET
 #if (MCUBOOT_IMAGE_NUMBER == 2)
 #define IMAGE1_PRIMARY_START_ADDRESS CONFIG_ESP_IMAGE1_PRIMARY_START_ADDRESS
 #define IMAGE1_SECONDARY_START_ADDRESS CONFIG_ESP_IMAGE1_SECONDARY_START_ADDRESS
 #endif
-
 #define APPLICATION_SIZE CONFIG_ESP_APPLICATION_SIZE
+
+#ifdef CONFIG_ESP_BOOT_SWAP_USING_SCRATCH
+#define SCRATCH_OFFSET CONFIG_ESP_SCRATCH_OFFSET
 #define SCRATCH_SIZE CONFIG_ESP_SCRATCH_SIZE
+#endif
 
 extern int ets_printf(const char *fmt, ...);
 
@@ -99,12 +103,14 @@ static const struct flash_area secondary_img1 = {
 };
 #endif
 
+#ifdef CONFIG_ESP_BOOT_SWAP_USING_SCRATCH
 static const struct flash_area scratch_img0 = {
     .fa_id = FLASH_AREA_IMAGE_SCRATCH,
     .fa_device_id = FLASH_DEVICE_INTERNAL_FLASH,
     .fa_off = SCRATCH_OFFSET,
     .fa_size = SCRATCH_SIZE,
 };
+#endif
 
 static const struct flash_area *s_flash_areas[] = {
     &bootloader,
@@ -114,7 +120,9 @@ static const struct flash_area *s_flash_areas[] = {
     &primary_img1,
     &secondary_img1,
 #endif
+#ifdef CONFIG_ESP_BOOT_SWAP_USING_SCRATCH
     &scratch_img0,
+#endif
 };
 
 static const struct flash_area *prv_lookup_flash_area(uint8_t id) {
@@ -212,7 +220,11 @@ int flash_area_read(const struct flash_area *fa, uint32_t off, void *dst,
 
 static bool aligned_flash_write(size_t dest_addr, const void *src, size_t size)
 {
-    bool flash_encryption_enabled = esp_flash_encryption_enabled();
+#ifdef CONFIG_SECURE_FLASH_ENC_ENABLED
+        bool flash_encryption_enabled = esp_flash_encryption_enabled();
+#else
+        bool flash_encryption_enabled = false;
+#endif
 
     if (IS_ALIGNED(dest_addr, 4) && IS_ALIGNED((uintptr_t)src, 4) && IS_ALIGNED(size, 4)) {
         /* A single write operation is enough when all parameters are aligned */
@@ -327,7 +339,11 @@ uint32_t flash_area_align(const struct flash_area *area)
     static size_t align = 0;
 
     if (align == 0) {
+#ifdef CONFIG_SECURE_FLASH_ENC_ENABLED
         bool flash_encryption_enabled = esp_flash_encryption_enabled();
+#else
+        bool flash_encryption_enabled = false;
+#endif
 
         if (flash_encryption_enabled) {
             align = 32;
@@ -365,6 +381,15 @@ int flash_area_get_sectors(int fa_id, uint32_t *count,
 }
 
 int flash_area_sector_from_off(uint32_t off, struct flash_sector *sector)
+{
+    sector->fs_off = (off / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE;
+    sector->fs_size = FLASH_SECTOR_SIZE;
+
+    return 0;
+}
+
+int flash_area_get_sector(const struct flash_area *fa, uint32_t off,
+                          struct flash_sector *sector)
 {
     sector->fs_off = (off / FLASH_SECTOR_SIZE) * FLASH_SECTOR_SIZE;
     sector->fs_size = FLASH_SECTOR_SIZE;

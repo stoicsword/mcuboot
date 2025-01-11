@@ -30,10 +30,19 @@ install_newt() {
     popd
 }
 
-shallow_clone_mynewt() {
-    mkdir -p repos/apache-mynewt-core
-    git clone --depth=1 https://github.com/apache/mynewt-core repos/apache-mynewt-core
+install_mynewt() {
+    build="$PWD/build"
+    newt new "$build"
     [[ $? -ne 0 ]] && exit 1
+
+    cp -f ci/mynewt_project.yml "$build"/project.yml
+
+    pushd "$build"
+    newt upgrade --shallow=1
+    [[ $? -ne 0 ]] && exit 1
+
+    popd
+    mv "$build"/repos .
 }
 
 arm_toolchain_install() {
@@ -57,9 +66,15 @@ arm_toolchain_install() {
     done
 }
 
+native_test_setup() {
+    sudo apt-get update
+    sudo apt-get install -y gcc-multilib
+}
+
 mkdir -p $HOME/bin
 export PATH=$HOME/bin:$PATH
 
 install_newt
-shallow_clone_mynewt
+install_mynewt
 arm_toolchain_install
+native_test_setup

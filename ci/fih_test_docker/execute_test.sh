@@ -1,6 +1,6 @@
 #!/bin/bash -x
 
-# Copyright (c) 2020-2021 Arm Limited
+# Copyright (c) 2020-2023 Arm Limited
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -16,10 +16,7 @@
 
 set -e
 
-WORKING_DIRECTORY=/root/work/tfm
-MCUBOOT_PATH=$WORKING_DIRECTORY/mcuboot
-TFM_DIR=$WORKING_DIRECTORY/trusted-firmware-m
-TFM_BUILD_DIR=$TFM_DIR/build
+source $(dirname "$0")/paths.sh
 
 SKIP_SIZE=$1
 BUILD_TYPE=$2
@@ -34,26 +31,31 @@ else
 fi
 
 # build TF-M with MCUBoot
-mkdir -p $TFM_BUILD_DIR
-cd $TFM_DIR
-cmake -B $TFM_BUILD_DIR \
-    -DTFM_SPM_LOG_LEVEL=TFM_SPM_LOG_LEVEL_INFO \
-    -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
-    -DTFM_TOOLCHAIN_FILE=toolchain_GNUARM.cmake \
+mkdir -p $TFM_BUILD_PATH $TFM_SPE_BUILD_PATH
+
+cmake -S $TFM_TESTS_PATH/tests_reg/spe \
+    -B $TFM_SPE_BUILD_PATH \
     -DTFM_PLATFORM=arm/mps2/an521 \
-    -DTEST_NS=ON \
+    -DCONFIG_TFM_SOURCE_PATH=$TFM_PATH \
+    -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+    -DTFM_TOOLCHAIN_FILE=$TFM_PATH/toolchain_GNUARM.cmake \
     -DTEST_S=ON \
+    -DTEST_NS=ON \
     -DTFM_PSA_API=ON \
     -DMCUBOOT_PATH=$MCUBOOT_PATH \
     -DMCUBOOT_LOG_LEVEL=INFO \
-    $CMAKE_FIH_LEVEL \
-    .
-cd $TFM_BUILD_DIR
-make -j install
+    $CMAKE_FIH_LEVEL
+cmake --build $TFM_SPE_BUILD_PATH -- install
 
-BOOTLOADER_AXF='./install/outputs/ARM/MPS2/AN521/bl2.axf'
+cmake -S $TFM_TESTS_PATH/tests_reg \
+    -B $TFM_BUILD_PATH \
+    -DCONFIG_SPE_PATH=$TFM_SPE_BUILD_PATH/api_ns \
+    -DCMAKE_BUILD_TYPE=$BUILD_TYPE \
+    -DTFM_TOOLCHAIN_FILE=$TFM_SPE_BUILD_PATH/api_ns/cmake/toolchain_ns_GNUARM.cmake
+cmake --build $TFM_BUILD_PATH
 
-$MCUBOOT_PATH/ci/fih_test_docker/run_fi_test.sh $BOOTLOADER_AXF $SKIP_SIZE $DAMAGE_TYPE> fih_test_output.yaml
+cd $TFM_BUILD_PATH
+$MCUBOOT_PATH/ci/fih_test_docker/run_fi_test.sh $BOOTLOADER_AXF_PATH $SKIP_SIZE $DAMAGE_TYPE> fih_test_output.yaml
 
 echo ""
 echo "test finished with"
@@ -63,3 +65,4 @@ echo "    - SKIP_SIZE: $SKIP_SIZE"
 echo "    - DAMAGE_TYPE: $DAMAGE_TYPE"
 
 python3 $MCUBOOT_PATH/ci/fih_test_docker/generate_test_report.py fih_test_output.yaml
+python3 $MCUBOOT_PATH/ci/fih_test_docker/validate_output.py fih_test_output.yaml $SKIP_SIZE $FIH_LEVEL
